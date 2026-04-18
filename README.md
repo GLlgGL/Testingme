@@ -195,9 +195,35 @@ docker run -d -p 7860:7860 \
 The easiest way to configure proxies is through a `.env` file.
 
 1.  **Create a `.env` file** in the main project folder (you can rename the `.env.example` file).
-2.  **Add your proxy variables** to the `.env` file.
+2.  **Add your proxy/solver variables** to the `.env` file.
 
-**Example `.env` file:**
+### 🛡️ Solver Configuration (Cloudflare Bypass)
+
+For some providers, EasyProxy requires external "Solvers" to bypass Cloudflare and bot challenges:
+
+| Service | Supported Providers | Description |
+|:---|:---|:---|
+| **FlareSolverr** | Deltabit, Mixdrop, MaxStream | Handles browser verification and redirects. |
+| **Byparr** | DoodStream | Ensures IP consistency for video tokens. |
+
+**Setup with Docker Compose (Recommended):**
+The provided `docker-compose.yml` already includes these services. Simply run:
+```bash
+docker-compose up -d
+```
+
+**Manual Configuration (.env):**
+```env
+# FlareSolverr (Default port: 8191)
+FLARESOLVERR_URL=http://flaresolverr:8191
+FLARESOLVERR_TIMEOUT=60
+
+# Byparr (Default port: 8192)
+BYPARR_URL=http://byparr:8192
+BYPARR_PORT=8192
+```
+
+**Global proxy for all traffic**
 
 ```env
 # Global proxy for all traffic
