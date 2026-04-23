@@ -1380,6 +1380,12 @@ class HLSProxy:
                         stream_url += "?direct=1"
                     logger.info(f"⚡ WARP Bypass forced for this stream: {stream_url[:50]}...")
 
+                if force_disable_ssl:
+                    if "?" in stream_url:
+                        stream_url += "&disable_ssl=1"
+                    else:
+                        stream_url += "?disable_ssl=1"
+
 
             # Se redirect_stream è False, restituisci il JSON con i dettagli (stile MediaFlow)
             if not redirect_stream:
@@ -1902,6 +1908,7 @@ class HLSProxy:
             stream_url = result["destination_url"]
             stream_headers = result.get("request_headers", {})
             mediaflow_endpoint = result.get("mediaflow_endpoint", "hls_proxy")
+            force_disable_ssl = result.get("disable_ssl", False)
 
             logger.info(
                 f"✅ Extraction success: {stream_url[:50]}... Endpoint: {mediaflow_endpoint}"
@@ -1936,6 +1943,9 @@ class HLSProxy:
             api_password = request.query.get("api_password")
             if api_password:
                 header_params += f"&api_password={api_password}"
+
+            if force_disable_ssl:
+                header_params += "&disable_ssl=1"
 
             # 1. URL COMPLETO (Solo per il redirect)
             full_proxy_url = f"{proxy_base}{endpoint}?d={encoded_url}{header_params}"
