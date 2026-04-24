@@ -27,6 +27,35 @@ class DeltabitExtractor:
     Deltabit extractor using FlareSolverr for Cloudflare bypass and session caching.
     Supports safego.cc/clicka.cc redirection and unifies FlareSolverr sessions for speed.
     """
+import asyncio
+import logging
+import re
+import time
+import base64
+from urllib.parse import urlparse, urljoin, urlencode
+
+import aiohttp
+from bs4 import BeautifulSoup, SoupStrainer
+
+from config import FLARESOLVERR_URL, FLARESOLVERR_TIMEOUT, get_proxy_for_url, TRANSPORT_ROUTES, get_solver_proxy_url
+from utils.cookie_cache import CookieCache
+
+logger = logging.getLogger(__name__)
+
+class ExtractorError(Exception):
+    pass
+
+class Settings:
+    flaresolverr_url = FLARESOLVERR_URL
+    flaresolverr_timeout = FLARESOLVERR_TIMEOUT
+
+settings = Settings()
+
+class DeltabitExtractor:
+    """
+    Deltabit extractor using FlareSolverr for Cloudflare bypass and session caching.
+    Supports safego.cc/clicka.cc redirection and unifies FlareSolverr sessions for speed.
+    """
 
     def __init__(self, request_headers: dict = None, proxies: list = None):
         self.request_headers = request_headers or {}
@@ -35,6 +64,7 @@ class DeltabitExtractor:
         self.proxies = proxies or []
         self.mediaflow_endpoint = "proxy_stream_endpoint"
         self.cache = CookieCache("deltabit")
+        self.bypass_warp_active = False
 
     async def _request_flaresolverr(self, cmd: str, url: str = None, post_data: str = None, session_id: str = None) -> dict:
         """Performs a request via FlareSolverr."""
@@ -50,12 +80,12 @@ class DeltabitExtractor:
         if url: 
             payload["url"] = url
             # Determina dinamicamente il proxy per questo specifico URL
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies)
+            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies, bypass_warp=self.bypass_warp_active)
             if proxy:
                 payload["proxy"] = {"url": proxy}
                 solver_proxy = get_solver_proxy_url(proxy)
                 fs_headers["X-Proxy-Server"] = solver_proxy
-                logger.debug(f"Deltabit: Passing explicit proxy to solver: {solver_proxy}")
+                logger.debug(f"Deltabit: Passing explicit proxy to solver: {solver_proxy} (bypass_warp={self.bypass_warp_active})")
 
         if post_data: payload["postData"] = post_data
         if session_id: payload["session"] = session_id
@@ -86,6 +116,9 @@ class DeltabitExtractor:
         # 1. Handle redirectors (safego.cc, clicka.cc, etc.)
         if any(d in url.lower() for d in ["safego.cc", "clicka.cc", "clicka"]):
             url = await self._solve_redirector(url)
+            # Una volta risolto il redirector, passiamo a warp=off per Deltabit
+            self.bypass_warp_active = True
+            logger.debug("🔄 Redirector solved, switching to warp=off for Deltabit")
 
         # 2. Normalize URL to embed format
         if "/e/" not in url:
@@ -268,6 +301,7 @@ class DeltabitExtractor:
             "destination_url": video_url,
             "request_headers": headers,
             "mediaflow_endpoint": self.mediaflow_endpoint,
+            "bypass_warp": self.bypass_warp_active
         }
 
     async def close(self):

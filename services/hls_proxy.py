@@ -1440,6 +1440,7 @@ class HLSProxy:
                     get_extractor_func=lambda url, headers, host=None: self.get_extractor(url, headers, host, bypass_warp=bypass_warp),
                     no_bypass=no_bypass,
                     shorten_url_func=self.shorten_hls_url if use_short_hls_urls else None,
+                    bypass_warp=bypass_warp,
                 )
                 return web.Response(
                     text=rewritten_manifest,
@@ -1908,6 +1909,10 @@ class HLSProxy:
             stream_headers = result.get("request_headers", {})
             mediaflow_endpoint = result.get("mediaflow_endpoint", "hls_proxy")
             force_disable_ssl = result.get("disable_ssl", False)
+            
+            # Se l'estrattore forza il bypass di WARP (es. Deltabit)
+            if result.get("bypass_warp"):
+                bypass_warp = True
 
             logger.info(
                 f"✅ Extraction success: {stream_url[:50]}... Endpoint: {mediaflow_endpoint}"
@@ -1945,6 +1950,9 @@ class HLSProxy:
 
             if force_disable_ssl:
                 header_params += "&disable_ssl=1"
+
+            if bypass_warp:
+                header_params += "&warp=off"
 
             # 1. URL COMPLETO (Solo per il redirect)
             full_proxy_url = f"{proxy_base}{endpoint}?d={encoded_url}{header_params}"
@@ -2827,7 +2835,8 @@ class HLSProxy:
                         api_password=request.query.get("api_password"),
                         get_extractor_func=self.get_extractor,
                         no_bypass=request.query.get("no_bypass") == "1",
-                        shorten_url_func=self.shorten_hls_url if use_short_hls_urls else None
+                        shorten_url_func=self.shorten_hls_url if use_short_hls_urls else None,
+                        bypass_warp=bypass_warp
                     )
                     return web.Response(text=rewritten, headers={
                         "Content-Type": "application/vnd.apple.mpegurl",
@@ -2939,6 +2948,7 @@ class HLSProxy:
                         headers,
                         clearkey_param,
                         api_password,
+                        bypass_warp=bypass_warp,
                     )
 
                     return web.Response(
