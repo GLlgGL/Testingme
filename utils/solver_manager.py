@@ -1,5 +1,7 @@
 import logging
 import asyncio
+import json
+import os
 import aiohttp
 from config import FLARESOLVERR_URL, FLARESOLVERR_TIMEOUT, FLARESOLVERR_WARM_SESSIONS
 
@@ -11,36 +13,86 @@ class SolverSessionManager:
     Supporta sessioni persistenti (Warm Mode) per risparmiare RAM o sessioni temporanee per risparmiare RAM.
     """
     _instance = None
-    _warm_session_id = None
+    _persistent_sessions = {} # {key: session_id}
+    _sessions_file = "persistent_sessions.json"
     _lock = asyncio.Lock()
+    _initialized = False
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(SolverSessionManager, cls).__new__(cls)
         return cls._instance
 
+    async def _init_if_needed(self):
+        if self._initialized: return
+        async with self._lock:
+            if self._initialized: return
+            if os.path.exists(self._sessions_file):
+                try:
+                    with open(self._sessions_file, 'r') as f:
+                        self._persistent_sessions = json.load(f)
+                    logger.info(f"FlareSolverr: Caricate {len(self._persistent_sessions)} sessioni persistenti dal file.")
+                except Exception as e:
+                    logger.warning(f"FlareSolverr: Errore caricamento sessioni: {e}")
+            self._initialized = True
+
+    def _save_sessions(self):
+        try:
+            with open(self._sessions_file, 'w') as f:
+                json.dump(self._persistent_sessions, f)
+        except Exception as e:
+            logger.warning(f"FlareSolverr: Errore salvataggio sessioni: {e}")
+
     async def get_session(self, proxy: str = None) -> tuple[str, bool]:
         """
         Ottiene una sessione FlareSolverr.
         Ritorna una tupla (session_id, is_persistent).
         """
+        await self._init_if_needed()
         if not FLARESOLVERR_URL:
             return None, False
 
         # Se non c'è proxy e la modalità Warm è attiva, usiamo la sessione persistente
         if proxy is None and FLARESOLVERR_WARM_SESSIONS:
-            async with self._lock:
-                if self._warm_session_id:
-                    return self._warm_session_id, True
-                
-                logger.info("FlareSolverr: Creazione sessione persistente (WARM_SESSIONS=true)")
-                self._warm_session_id = await self._create_session(None)
-                if self._warm_session_id:
-                    return self._warm_session_id, True
+            session_id = await self.get_persistent_session("universal", None)
+            if session_id: return session_id, True
         
         # Altrimenti creiamo una sessione temporanea (sarà distrutta dopo l'uso)
         session_id = await self._create_session(proxy)
         return session_id, False
+
+    async def get_persistent_session(self, key: str, proxy: str = None) -> str:
+        """Ottiene o crea una sessione persistente identificata da una chiave (es. dominio)."""
+        await self._init_if_needed()
+        if not FLARESOLVERR_URL:
+            return None
+            
+        async with self._lock:
+            if key in self._persistent_sessions:
+                sid = self._persistent_sessions[key]
+                # Verifichiamo se la sessione esiste ancora su FlareSolverr
+                if await self._session_exists(sid):
+                    return sid
+                logger.info(f"FlareSolverr: Sessione {sid} per {key} non più valida o scaduta.")
+            
+            logger.info(f"FlareSolverr: Creazione nuova sessione persistente per chiave: {key}")
+            session_id = await self._create_session(proxy)
+            if session_id:
+                self._persistent_sessions[key] = session_id
+                self._save_sessions()
+            return session_id
+
+    async def _session_exists(self, session_id: str) -> bool:
+        endpoint = f"{FLARESOLVERR_URL.rstrip('/')}/v1"
+        payload = {"cmd": "sessions.list"}
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(endpoint, json=payload, timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return session_id in data.get("sessions", [])
+            except: pass
+        return False
 
     async def _create_session(self, proxy: str = None) -> str:
         endpoint = f"{FLARESOLVERR_URL.rstrip('/')}/v1"
