@@ -95,7 +95,7 @@ class F16PxExtractor(BaseExtractor):
         media_id = match.group(1)
 
         # ✅ FIX: correct endpoint
-        api_url = f"https://{host}/api/videos/{media_id}/playback"
+        api_url = f"https://{host}/api/videos/{media_id}/embed/playback"
 
         headers = self.base_headers.copy()
         headers["referer"] = f"{origin}/"
